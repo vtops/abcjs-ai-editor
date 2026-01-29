@@ -13,3 +13,103 @@ body {
     color-scheme: dark;
   }
 }
+
+/* CodeMirror Selection Enhancement */
+.cm-editor .cm-scroller ::selection {
+  background-color: #f87171 !important;
+  color: inherit;
+}
+
+.cm-editor.cm-focused .cm-scroller ::selection {
+  background-color: #ef4444 !important;
+  color: #fff;
+}
+
+/* ABC Music Notation Styles */
+
+/* Paper-like notation container */
+#paper {
+  background: transparent;
+}
+
+#paper svg {
+  background: transparent !important;
+}
+
+/* Highlight selected notation elements */
+.abcjs-highlight {
+  fill: #fef3c7 !important;
+  fill-opacity: 0.9 !important;
+  stroke: #f59e0b !important;
+  stroke-width: 2px !important;
+  stroke-opacity: 1 !important;
+  filter: drop-shadow(0 2px 4px rgba(245, 158, 11, 0.3));
+  cursor: pointer;
+  transition: all 0.2s ease;
+  animation: highlight-pulse 0.3s ease-out;
+}
+
+/* Ensure stems (符尾) and beams (符杠) are also highlighted */
+path.abcjs-highlight,
+line.abcjs-highlight,
+rect.abcjs-highlight {
+  fill: #fef3c7 !important;
+  stroke: #f59e0b !important;
+  stroke-width: 2.5px !important;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    fill-opacity: 0.3;
+    transform: scale(0.98);
+  }
+  50% {
+    fill-opacity: 1;
+    transform: scale(1.02);
+  }
+  100% {
+    fill-opacity: 0.8;
+    transform: scale(1);
+  }
+}
+
+.abcjs-highlight:hover {
+  fill: #fde68a !important;
+  fill-opacity: 1 !important;
+  stroke-width: 2.5px !important;
+}
+
+/* Make notation elements clickable and hoverable */
+.abcjs-note,
+.abcjs-rest,
+.abcjs-chord {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.abcjs-note:hover,
+.abcjs-rest:hover,
+.abcjs-chord:hover {
+  opacity: 0.7;
+}
+
+/* Improve overall notation appearance */
+svg.abcjs-container {
+  font-family: 'Times New Roman', serif;
+}
+
+svg.abcjs-container text {
+  user-select: none;
+}
+
+/* Staff lines */
+svg.abcjs-container .abcjs-staff {
+  stroke: #374151;
+  stroke-width: 1;
+}
+
+/* Bar lines */
+svg.abcjs-container .abcjs-bar {
+  stroke: #1f2937;
+  stroke-width: 1.5;
+}

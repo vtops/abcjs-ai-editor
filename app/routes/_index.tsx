@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import abcjs from "abcjs";
 import "abcjs/abcjs-audio.css";
 import type { Route } from "./+types/_index";
+import { AbcEditor } from "../components/AbcEditor";
 
 // -----------------------------------------------------------------------------
 // 1. 类型定义与初始数据
@@ -115,6 +116,10 @@ export default function Index() {
   const notationRef = useRef<HTMLDivElement>(null);
   const synthControlRef = useRef<any>(null);
   const visualObjRef = useRef<any>(null);
+  const timingCallbacksRef = useRef<any>(null);
+  
+  // 交互状态：代码选中范围
+  const [selectedRange, setSelectedRange] = useState<{ from: number; to: number } | null>(null);
 
   // ---------------------------------------------------------------------------
   // 3. 副作用 (Effects)
@@ -145,13 +150,56 @@ export default function Index() {
     if (apiKey) localStorage.setItem("openai_api_key", apiKey);
   }, [abcString, apiKey]);
 
+  // 处理代码选中事件
+  const handleSelectionChange = useCallback((from: number, to: number) => {
+    if (from !== to) {
+      setSelectedRange({ from, to });
+    } else {
+      setSelectedRange(null);
+    }
+  }, []);
+
+  // 处理编辑器内容变化（带历史记录的防抖更新）
+  const pendingHistoryUpdate = useRef<NodeJS.Timeout | null>(null);
+  const handleAbcChange = useCallback((newAbc: string) => {
+    // 立即更新显示
+    setAbcString(newAbc);
+    
+    // 清除之前的防抖定时器
+    if (pendingHistoryUpdate.current) {
+      clearTimeout(pendingHistoryUpdate.current);
+    }
+    
+    // 延迟更新历史记录（1秒后）
+    pendingHistoryUpdate.current = setTimeout(() => {
+      if (newAbc !== history[historyIndex]) {
+        updateAbcWithHistory(newAbc);
+      }
+    }, 1000);
+  }, [history, historyIndex]);
+
   // 渲染：当 abcString 改变时，调用 abcjs 渲染
   useEffect(() => {
     if (notationRef.current) {
+      // 清空容器
+      notationRef.current.innerHTML = '';
+      
       // 立即渲染乐谱（不需要防抖）
       const visualObj = abcjs.renderAbc(notationRef.current, abcString, {
         responsive: "resize", // 自适应宽度
         add_classes: true,
+        clickListener: (abcElem: any) => {
+          // 五线谱点击事件：定位到对应的代码位置
+          if (abcElem && abcElem.startChar !== undefined) {
+            const from = Math.max(0, abcElem.startChar);
+            const to = Math.min(abcString.length, abcElem.endChar || abcElem.startChar + 1);
+            
+            // 只有在范围有效时才设置
+            if (from <= to && to <= abcString.length) {
+              setSelectedRange({ from, to });
+            }
+          }
+        },
       });
       
       // 保存可视化对象用于播放
@@ -216,6 +264,102 @@ export default function Index() {
       }
     }
   }, [abcString]);
+
+  // 高亮选中范围对应的五线谱元素
+  useEffect(() => {
+    // 清除所有高亮
+    const clearHighlights = () => {
+      if (notationRef.current) {
+        const allElements = notationRef.current.querySelectorAll('*');
+        allElements.forEach(el => {
+          el.classList.remove('abcjs-highlight');
+        });
+      }
+    };
+
+    clearHighlights();
+
+    if (!visualObjRef.current || !selectedRange) {
+      return;
+    }
+
+    // 添加新的高亮
+    try {
+      const { from, to } = selectedRange;
+      
+      // 收集需要高亮的 SVG 元素
+      const elementsToHighlight = new Set<SVGElement>();
+      
+      // 遍历所有音符线条
+      if (visualObjRef.current.lines) {
+        visualObjRef.current.lines.forEach((line: any) => {
+          if (line.staff) {
+            line.staff.forEach((staff: any) => {
+              if (staff.voices) {
+                staff.voices.forEach((voice: any) => {
+                  voice.forEach((element: any) => {
+                    // 跳过小节线、换行符等非音符元素
+                    if (element.el_type === 'bar' || element.el_type === 'clef' || 
+                        element.el_type === 'keySignature' || element.el_type === 'timeSignature') {
+                      return;
+                    }
+                    
+                    // 检查元素是否在选中范围内
+                    if (element.startChar !== undefined && element.endChar !== undefined) {
+                      const elementStart = element.startChar;
+                      const elementEnd = element.endChar;
+                      
+                      // 元素必须完全或部分在选中范围内
+                      const isInRange = elementStart < to && elementEnd > from;
+                      
+                      if (isInRange && element.abselem) {
+                        // 高亮音符相关的所有 SVG 元素
+                        // elemset 包含符头、符尾等
+                        if (element.abselem.elemset) {
+                          element.abselem.elemset.forEach((svgEl: any) => {
+                            if (svgEl && svgEl.tagName) {
+                              elementsToHighlight.add(svgEl);
+                            }
+                          });
+                        }
+                        
+                        // 高亮符杠 (beams)
+                        if (element.abselem.beams) {
+                          element.abselem.beams.forEach((beam: any) => {
+                            if (beam.elem) {
+                              elementsToHighlight.add(beam.elem);
+                            }
+                          });
+                        }
+                        
+                        // 高亮连音线 (ties)
+                        if (element.abselem.ties) {
+                          element.abselem.ties.forEach((tie: any) => {
+                            if (tie.elem) {
+                              elementsToHighlight.add(tie.elem);
+                            }
+                          });
+                        }
+                      }
+                    }
+                  });
+                });
+              }
+            });
+          }
+        });
+      }
+      
+      // 应用高亮
+      elementsToHighlight.forEach(el => {
+        if (el.classList) {
+          el.classList.add('abcjs-highlight');
+        }
+      });
+    } catch (err) {
+      console.error("Error highlighting notation:", err);
+    }
+  }, [selectedRange]);
 
   // ---------------------------------------------------------------------------
   // 4. 播放器控制逻辑（使用 abcjs 内置播放器）
@@ -446,19 +590,6 @@ export default function Index() {
     }
   };
 
-  // 手动更新 ABC（带历史记录）
-  const handleAbcChange = (newAbc: string) => {
-    setAbcString(newAbc);
-    // 防抖：500ms 后再加入历史
-    const timeoutId = setTimeout(() => {
-      if (newAbc !== history[historyIndex]) {
-        updateAbcWithHistory(newAbc);
-      }
-    }, 500);
-    
-    return () => clearTimeout(timeoutId);
-  };
-
   // ---------------------------------------------------------------------------
   // 7. 键盘快捷键
   // ---------------------------------------------------------------------------
@@ -605,21 +736,24 @@ export default function Index() {
           {/* 代码编辑器 */}
           <div className="flex-1 p-4 flex flex-col">
             <div className="flex justify-between items-center mb-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                ABC 乐谱代码
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                <span>ABC 乐谱代码</span>
+                <span className="text-xs font-normal text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">语法高亮</span>
             </label>
               <span className="text-xs text-gray-400">
                 {abcString.split('\n').length} 行
               </span>
             </div>
-            <textarea
+            <AbcEditor
               value={abcString}
-              onChange={(e) => setAbcString(e.target.value)}
-              className="flex-1 w-full p-3 font-mono text-sm bg-gray-50 border border-gray-300 rounded resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-              spellCheck={false}
+              onChange={handleAbcChange}
+              onSelectionChange={handleSelectionChange}
+              selectedRange={selectedRange}
               disabled={isLoading}
-              placeholder="在这里输入 ABC 乐谱代码..."
             />
+            <div className="mt-2 text-xs text-gray-500">
+              💡 提示：选中代码可高亮对应的五线谱，点击五线谱可定位代码
+            </div>
           </div>
 
           {/* AI 对话框 */}
@@ -691,8 +825,11 @@ export default function Index() {
         {/* 右侧：乐谱预览 */}
         <div className={`flex-1 flex flex-col p-6 overflow-auto bg-gradient-to-br from-gray-50 to-gray-100 transition-opacity duration-300 ${isLoading ? 'opacity-50' : 'opacity-100'}`}>
           {/* 播放器控制区 */}
-          <div className="max-w-4xl w-full mx-auto mb-4">
-            <div className="bg-white rounded-xl shadow-md p-4">
+          <div className="max-w-5xl w-full mx-auto mb-4">
+            <div className="bg-white rounded-sm shadow-md p-4"
+                 style={{
+                   boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.08)'
+                 }}>
               <div className="flex items-center gap-3 mb-3">
                 <svg className="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
@@ -724,22 +861,33 @@ export default function Index() {
             </div>
           </div>
 
-          {/* 乐谱显示区 */}
-          <div className="max-w-4xl w-full mx-auto flex-1">
-            <div className="bg-white shadow-xl rounded-2xl p-8 min-h-[500px]">
-              {/* 乐谱显示 */}
-              <div ref={notationRef} id="paper" className="w-full min-h-[300px]"></div>
+          {/* 乐谱显示区 - 纸张效果 */}
+          <div className="max-w-5xl w-full mx-auto flex-1">
+            {/* 纸张容器 */}
+            <div className="bg-white shadow-2xl rounded-sm min-h-[500px] relative" 
+                 style={{
+                   backgroundImage: 'linear-gradient(to bottom, #fafafa 0%, #ffffff 100%)',
+                   boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 8px 32px rgba(0,0,0,0.08), inset 0 0 0 1px rgba(0,0,0,0.05)'
+                 }}>
+              {/* 纸张顶部装饰线 */}
+              <div className="absolute top-0 left-0 right-0 h-12 border-b border-red-200 bg-gradient-to-b from-red-50/30 to-transparent"></div>
               
-              {/* 如果乐谱为空的提示 */}
-              {!abcString && (
-                <div className="text-center text-gray-400 mt-20">
-                  <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                  </svg>
-                  <p className="text-lg">还没有乐谱</p>
-                  <p className="text-sm mt-2">开始编辑代码，或者让 AI 帮你创作！</p>
-                </div>
-              )}
+              {/* 乐谱内容区 */}
+              <div className="px-12 py-16">
+                {/* 乐谱显示 */}
+                <div ref={notationRef} id="paper" className="w-full min-h-[300px]"></div>
+                
+                {/* 如果乐谱为空的提示 */}
+                {!abcString && (
+                  <div className="text-center text-gray-400 mt-20">
+                    <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                    <p className="text-lg">还没有乐谱</p>
+                    <p className="text-sm mt-2">开始编辑代码，或者让 AI 帮你创作！</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -765,7 +913,11 @@ export default function Index() {
                   <ul className="space-y-2 text-sm">
                     <li className="flex items-start gap-2">
                       <span className="text-indigo-600">•</span>
-                      <span><strong>实时编辑：</strong>左侧编辑 ABC 代码，右侧即时预览乐谱</span>
+                      <span><strong>实时编辑：</strong>左侧编辑 ABC 代码（带语法高亮），右侧即时预览乐谱</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-indigo-600">•</span>
+                      <span><strong>双向交互：</strong>选中代码高亮五线谱，点击五线谱定位代码</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-indigo-600">•</span>
@@ -933,6 +1085,24 @@ export default function Index() {
                     <div className="bg-gray-50 rounded p-3">
                       <div className="font-mono font-bold">^C  _C  =C</div>
                       <div className="text-gray-600">升 / 降 / 还原</div>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">🎨 编辑器功能：</h3>
+                  <div className="space-y-2 text-sm text-gray-700">
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-indigo-600">语法高亮：</span>
+                      <span>不同颜色标识音符、时值、小节线等，更易阅读</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-green-600">选中→高亮：</span>
+                      <span>在编辑器中选中代码，五线谱上对应部分会高亮显示</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-blue-600">点击→定位：</span>
+                      <span>点击五线谱上的音符，编辑器自动跳转到对应代码</span>
                     </div>
                   </div>
                 </section>
