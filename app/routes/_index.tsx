@@ -97,10 +97,6 @@ export default function Index() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // 播放器相关状态
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isPlayerReady, setIsPlayerReady] = useState(false);
-  const [isPlayerUpdating, setIsPlayerUpdating] = useState(false);
   
   // UI 状态
   const [showWelcome, setShowWelcome] = useState(false);
@@ -228,10 +224,6 @@ export default function Index() {
     if (visualObj && visualObj.length > 0) {
       visualObjRef.current = visualObj[0];
       
-      // 标记播放器正在更新
-      setIsPlayerUpdating(true);
-      setIsPlayerReady(false);
-      
       // 延迟初始化播放器（防抖 500ms）
       const timeoutId = setTimeout(() => {
         const initPlayer = async () => {
@@ -278,13 +270,9 @@ export default function Index() {
             });
 
             synthControlRef.current = synthControl;
-            setIsPlayerReady(true);
-            setIsPlaying(false);
-            setIsPlayerUpdating(false);
           } catch (err: any) {
             console.error("Failed to initialize player:", err);
             setError("播放器初始化失败：" + err.message);
-            setIsPlayerUpdating(false);
           }
         };
         
@@ -898,43 +886,7 @@ export default function Index() {
           <div className={`flex-1 flex flex-col p-6 overflow-auto bg-gradient-to-br from-gray-50 to-gray-100 transition-opacity duration-300 ${isLoading ? 'opacity-50' : 'opacity-100'}`}>
             {/* 播放器控制区 */}
             <div className="max-w-5xl w-full mx-auto mb-4">
-              <div className="bg-white rounded-sm shadow-md p-4"
-                   style={{
-                     boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.08)'
-                   }}>
-                <div className="flex items-center gap-3 mb-3">
-                  <svg className="w-5 h-5 text-indigo-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
-                  </svg>
-                  <h3 className="font-semibold text-gray-900">音频播放器</h3>
-                  {isPlayerUpdating && (
-                    <span className="text-xs text-amber-600 ml-auto flex items-center gap-1 whitespace-nowrap">
-                      <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      正在更新...
-                    </span>
-                  )}
-                  {!isPlayerReady && !isPlayerUpdating && (
-                    <span className="text-xs text-gray-500 ml-auto">等待乐谱加载</span>
-                  )}
-                  {isPlayerReady && !isPlayerUpdating && (
-                    <span className="text-xs text-green-600 ml-auto flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      就绪
-                    </span>
-                  )}
-                </div>
-                {/* abcjs 内置播放器 UI */}
-                <div 
-                  id="audio-player" 
-                  className={`min-h-[80px] ${isPlayerUpdating ? 'opacity-50' : 'opacity-100'}`}
-                  style={{ width: '100%' }}
-                ></div>
-              </div>
+              <div id="audio-player"></div>
             </div>
 
             {/* 乐谱显示区 - 纸张效果 */}
@@ -1067,32 +1019,7 @@ export default function Index() {
           <div className="flex-none border-t-2 border-gray-200 bg-white shadow-lg">
             {/* 播放器 */}
             <div className="p-3 border-b border-gray-200 bg-white">
-              <div className="flex items-center gap-2 mb-2">
-                <svg className="w-4 h-4 text-indigo-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
-                </svg>
-                <h3 className="font-semibold text-gray-900 text-sm">播放器</h3>
-                {isPlayerUpdating && (
-                  <span className="text-xs text-amber-600 ml-auto flex items-center gap-1">
-                    <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  </span>
-                )}
-                {isPlayerReady && !isPlayerUpdating && (
-                  <span className="text-xs text-green-600 ml-auto flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  </span>
-                )}
-              </div>
-              <div 
-                id="audio-player-mobile" 
-                className={`min-h-[60px] ${isPlayerUpdating ? 'opacity-50' : 'opacity-100'}`}
-                style={{ width: '100%' }}
-              ></div>
+              <div id="audio-player-mobile"></div>
             </div>
 
             {/* AI 对话框 */}
